@@ -2,6 +2,37 @@
 
 Conversational sales analytics that answers **what happened, why it happened, what will happen, and what to do next**. The solution combines Streamlit, DeepSeek, and modular analytics pipelines (descriptive, diagnostic, predictive, prescriptive) with optional FastAPI endpoints for integrations.
 
+## 🔄 System Workflow
+
+```mermaid
+graph TD
+    A[User Question<br/>Streamlit UI] --> B[DeepSeek Intent Understanding<br/>Query Type & Filters]
+    B --> C[Coordinator Agent<br/>Orchestration]
+    C --> D[Data Loader<br/>CSV Ingestion & Filtering]
+    D --> E[Analytics Pipeline]
+    
+    E --> F1[Descriptive Analytics<br/>What Happened]
+    E --> F2[Diagnostic Analytics<br/>Why It Happened]
+    E --> F3[Predictive Analytics<br/>What Will Happen]
+    E --> F4[Prescriptive Analytics<br/>What To Do Next]
+    
+    F1 --> G[Raw Results Aggregation]
+    F2 --> G
+    F3 --> G
+    F4 --> G
+    
+    G --> H[DeepSeek Answer Synthesis<br/>Natural Language Response]
+    H --> I[Response Output<br/>Text + Charts + JSON]
+    I --> A
+    
+    style A fill:#e1f5ff
+    style B fill:#fff4e1
+    style C fill:#e8f5e9
+    style E fill:#f3e5f5
+    style H fill:#fff4e1
+    style I fill:#e1f5ff
+```
+
 ## 🚀 Quick Start (Windows PowerShell)
 
 1. Open PowerShell in the project folder.
