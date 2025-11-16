@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n-sales-intelligence
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=changeme
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - PROJECT_ROOT=/app/sales-intelligence-agentic-system
+      - SLACK_CHANNEL=#sales-intelligence
+      - EMAIL_FROM=sales-intelligence@company.com
+      - EMAIL_TO=sales-team@company.com
+    volumes:
+      - ./:/app/sales-intelligence-agentic-system
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      - postgres
+    networks:
+      - sales-intelligence-network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres-sales-intelligence
+    environment:
+      - POSTGRES_DB=sales_intelligence
+      - POSTGRES_USER=n8n
+      - POSTGRES_PASSWORD=n8n_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - sales-intelligence-network
+
+volumes:
+  n8n_data:
+  postgres_data:
+
+networks:
+  sales-intelligence-network:
+    driver: bridge
+

@@ -1,0 +1,250 @@
+{
+  "name": "Sales Intelligence Agentic System",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "start-node",
+      "name": "Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Python script to execute coordinator agent\nconst projectRoot = $env.PROJECT_ROOT || '/app/sales-intelligence-agentic-system';\n\nconst pythonScript = `\nimport sys\nimport json\nfrom pathlib import Path\n\n# Add project root to Python path\nsys.path.insert(0, '${projectRoot}')\n\nfrom src.agents.coordinator_agent import CoordinatorAgent\nimport logging\n\n# Configure logging\nlogging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')\n\n# Initialize coordinator agent\ncoordinator = CoordinatorAgent(verbose=True)\n\n# Run all analytics\nresults = coordinator.run_all()\n\n# Convert numpy types to native Python types for JSON serialization\nimport numpy as np\n\ndef convert_to_serializable(obj):\n    if isinstance(obj, np.integer):\n        return int(obj)\n    elif isinstance(obj, np.floating):\n        return float(obj)\n    elif isinstance(obj, np.ndarray):\n        return obj.tolist()\n    elif isinstance(obj, dict):\n        return {key: convert_to_serializable(value) for key, value in obj.items()}\n    elif isinstance(obj, list):\n        return [convert_to_serializable(item) for item in obj]\n    else:\n        return obj\n\n# Prepare output\noutput = {\n    'narrative_report': results.get('narrative_report', ''),\n    'execution_summary': results.get('execution_summary', {}),\n    'summary_insights': convert_to_serializable(results.get('summary_insights', {})),\n    'prescriptive_actions': convert_to_serializable(results.get('raw_results', {}).get('prescriptive', {}).get('recommendations', [])),\n    'has_actions': len(results.get('raw_results', {}).get('prescriptive', {}).get('recommendations', [])) > 0\n}\n\n# Print JSON output\nprint(json.dumps(output, indent=2))\n`;\n\nreturn {\n  json: {\n    script: pythonScript,\n    projectRoot: projectRoot\n  }\n};"
+      },
+      "id": "python-code-node",
+      "name": "Prepare Python Script",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "command": "python3",
+        "arguments": "-c \"{{ $json.script }}\"",
+        "options": {}
+      },
+      "id": "execute-python",
+      "name": "Execute Python",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse JSON output from Python\nconst stdout = $input.item.json.stdout || '';\nconst stderr = $input.item.json.stderr || '';\n\nlet results;\n\ntry {\n  // Try to extract JSON from stdout\n  const jsonMatch = stdout.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    results = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('No JSON found in output');\n  }\n} catch (e) {\n  // If parsing fails, return error\n  return {\n    json: {\n      error: 'Failed to parse Python output',\n      error_message: e.message,\n      stdout: stdout,\n      stderr: stderr\n    }\n  };\n}\n\nreturn { json: results };"
+      },
+      "id": "parse-results",
+      "name": "Parse Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sales Reports",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $now.toISO() }}",
+            "narrative_report": "={{ $json.narrative_report }}",
+            "execution_status": "={{ $json.execution_summary.overall_status }}",
+            "has_actions": "={{ $json.has_actions }}",
+            "actions_count": "={{ $json.prescriptive_actions.length }}"
+          }
+        }
+      },
+      "id": "google-sheets",
+      "name": "Store in Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO sales_intelligence_reports (timestamp, narrative_report, execution_status, has_actions, actions_count, full_results) VALUES ($1, $2, $3, $4, $5, $6::jsonb) RETURNING id;",
+        "additionalFields": {
+          "queryParameters": "={{ [$now.toISO(), $json.narrative_report, $json.execution_summary.overall_status, $json.has_actions, $json.prescriptive_actions.length, JSON.stringify($json)] }}"
+        }
+      },
+      "id": "postgres",
+      "name": "Store in Postgres",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ 'sales-report-' + $now.toFormat('yyyy-MM-dd-HH-mm-ss') + '.json' }}",
+        "fileContent": "={{ JSON.stringify($json, null, 2) }}",
+        "options": {
+          "encoding": "utf8"
+        }
+      },
+      "id": "json-file",
+      "name": "Store as JSON File",
+      "type": "n8n-nodes-base.writeFile",
+      "typeVersion": 1,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-actions",
+              "leftValue": "={{ $json.has_actions }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-actions",
+      "name": "Check If Actions Exist",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "message",
+        "operation": "postMessage",
+        "channel": "={{ $env.SLACK_CHANNEL || 'sales-intelligence' }}",
+        "text": "={{ '📊 *Sales Intelligence Report*\\n\\n' + $json.narrative_report + '\\n\\n*Priority Actions:*\\n' + $json.prescriptive_actions.slice(0, 5).map(r => `• ${r.title} (${r.priority})`).join('\\n') + '\\n\\n*Execution Status:* ' + $json.execution_summary.overall_status }}",
+        "otherOptions": {}
+      },
+      "id": "slack",
+      "name": "Send Slack Notification",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.EMAIL_FROM || 'sales-intelligence@company.com' }}",
+        "toEmail": "={{ $env.EMAIL_TO || 'sales-team@company.com' }}",
+        "subject": "Sales Intelligence Report - Action Required",
+        "emailType": "html",
+        "options": {},
+        "message": "={{ '<h1>📊 Sales Intelligence Report</h1><h2>Executive Summary</h2><pre>' + $json.narrative_report.replace(/\\n/g, '<br>') + '</pre><h2>Priority Recommendations</h2>' + $json.prescriptive_actions.slice(0, 5).map(r => `<div><strong>${r.title}</strong> (${r.priority.toUpperCase()})<br><em>${r.category}</em><br>${r.description}<br><strong>Action:</strong> ${r.action}</div>`).join('<br>') + '<h2>Execution Summary</h2><p><strong>Status:</strong> ' + $json.execution_summary.overall_status + '</p>' }}"
+      },
+      "id": "email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1450, 400]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Prepare Python Script",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Python Script": {
+      "main": [
+        [
+          {
+            "node": "Execute Python",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Python": {
+      "main": [
+        [
+          {
+            "node": "Parse Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Results": {
+      "main": [
+        [
+          {
+            "node": "Store in Google Sheets",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Store in Postgres",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Store as JSON File",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check If Actions Exist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Actions Exist": {
+      "main": [
+        [
+          {
+            "node": "Send Slack Notification",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-01-01T00:00:00.000Z",
+  "versionId": "1"
+}
