@@ -19,7 +19,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Set DeepSeek API key
-DEEPSEEK_KEY = "sk-64543b775f5546f0ba0e313366a1b550"
+DEEPSEEK_KEY = ""
 os.environ["DEEPSEEK_API_KEY"] = DEEPSEEK_KEY
 
 def check_imports() -> Dict[str, Any]:
